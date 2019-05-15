@@ -28,6 +28,13 @@ var (
 	resultExp = regexp.MustCompile(`(?m)^(.{1,10})\b\s+\(([^\)]+)\)`)
 )
 
+type CommonResponse struct {
+	Status  int    `json:"status"`
+	Message string `json:"message"`
+}
+
+type CR CommonResponse
+
 type Web struct {
 	to utime.Duration
 
