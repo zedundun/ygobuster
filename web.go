@@ -318,7 +318,7 @@ func (s *Web) Run(port int, ctx context.Context) error {
 	r.GET("/queued", s.queued)
 	r.POST("/flush", s.flush)
 
-	r.GET("/status", s.status)
+	//r.GET("/status", s.status)
 
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),

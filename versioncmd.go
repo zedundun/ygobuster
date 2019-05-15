@@ -18,11 +18,11 @@ func (p *versionCmd) Name() string {
 }
 
 func (p *versionCmd) Synopsis() string {
-	return `version `
+	return "print version"
 }
 
 func (p *versionCmd) Usage() string {
-	return `version`
+	return "print version\n" //output for -h
 }
 
 func (p *versionCmd) SetFlags(*flag.FlagSet) {

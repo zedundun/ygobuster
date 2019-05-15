@@ -25,11 +25,11 @@ func (p *webCmd) Name() string {
 }
 
 func (p *webCmd) Synopsis() string {
-	return "web"
+	return "web service"
 }
 
 func (p *webCmd) Usage() string {
-	return "web -p port"
+	return "web -p port\n"
 }
 
 func (p *webCmd) SetFlags(f *flag.FlagSet) {
