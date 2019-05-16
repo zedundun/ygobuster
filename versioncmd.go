@@ -29,7 +29,7 @@ func (p *versionCmd) SetFlags(*flag.FlagSet) {
 }
 
 func (p *versionCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
-	txt, _ := ioutil.ReadFile("/opt/ygobuster/VERSION")
+	txt, _ := ioutil.ReadFile("/ygobuster/VERSION")
 	fmt.Println(string(txt))
 	return subcommands.ExitSuccess
 }

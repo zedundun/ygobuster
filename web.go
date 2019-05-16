@@ -35,10 +35,25 @@ type CommonResponse struct {
 
 type CR CommonResponse
 
+type AdditionalProp1 struct {
+}
+
+type TaskStatus struct {
+	Status   int     `json:"status"`
+	Start    string  `json:"start"`
+	Progress float64 `json:"progress"`
+	Remain   string  `json:"remain"`
+	Message  string  `json:"message"`
+}
+
+type TaskResult struct {
+	//TTL
+}
+
 type Web struct {
 	to utime.Duration
 
-	callback string
+	callback string //for sending result
 	potDir   string
 
 	tmpDir   string
@@ -54,6 +69,13 @@ type weakPassJob struct {
 	Cb   string         `json:"cb"`
 	Name string         `json:"name"`
 	Pot  string         `json:"pot"`
+	Tid  string         `json:"tid"`
+	To   utime.Duration `json:"to"`
+}
+
+type subnameBusterJob struct {
+	Cb   string         `json:"cb"`
+	Name string         `json:"name"`
 	Tid  string         `json:"tid"`
 	To   utime.Duration `json:"to"`
 }
@@ -147,36 +169,6 @@ func jtrWordList(dir string, to time.Duration) (string, error) {
 	return mutils.RunCommand(ctx, "/usr/sbin/john", "wordlist=", dir)
 }
 
-func (s *Web) scanRoute(ctx context.Context) {
-	ticker := time.NewTicker(time.Second / 2)
-	defer ticker.Stop()
-	list := s.list
-
-__FOR_LOOP:
-	for {
-		select {
-		case <-ticker.C:
-			for {
-				var task weakPassJob
-				err := list.Pop(&task)
-				if err == persistlist.ErrNil {
-					break
-				}
-				if err != nil {
-					fmt.Println("[scanRoute] POP ERROR:", err)
-					continue
-				}
-				r, _ := jtrSimple(task.Name, task.Pot, task.Tid, time.Duration(task.To))
-				s.doCallback(task.Cb, r)
-				os.Remove(task.Name)
-			}
-		case <-ctx.Done():
-			break __FOR_LOOP
-		}
-	}
-	close(s.scanQuit)
-}
-
 func (s *Web) simple(c *gin.Context) {
 	var err error
 	var exist bool
@@ -217,6 +209,7 @@ func (s *Web) simple(c *gin.Context) {
 	}
 	io.Copy(f, src)
 	f.Close()
+
 	tid := uuid.Must(uuid.NewV4()).String()
 	job := weakPassJob{
 		To:   to,
@@ -255,7 +248,7 @@ func (s *Web) simple(c *gin.Context) {
 }
 
 func (s *Web) version(c *gin.Context) {
-	txt, _ := ioutil.ReadFile("/opt/ygobuster/VERSION")
+	txt, _ := ioutil.ReadFile("/ygobuster/VERSION")
 	c.Data(200, "", txt)
 }
 
@@ -266,43 +259,35 @@ func (s *Web) Shutdown(ctx context.Context) error {
 	return err
 }
 
-func (s *Web) queued(c *gin.Context) {
+//do dns work
+func (s *Web) scanRoute(ctx context.Context) {
+	ticker := time.NewTicker(time.Second / 2)
+	defer ticker.Stop()
 	list := s.list
-	l, err := list.Len()
-	if err != nil {
-		c.String(400, "%v", err)
-		return
-	}
-	c.String(200, "%d", l)
-}
 
-func (s *Web) flush(c *gin.Context) {
-	list := s.list
-	var count int
-	var ret struct {
-		CR        //common response
-		Count int `json:"count"`
-	}
-
+__FOR_LOOP:
 	for {
-		var task weakPassJob
-		err := list.Pop(&task)
-		if err == persistlist.ErrNil {
-			break
-		} else if err != nil {
-			ret.Message = err.Error()
-			ret.Status = 1
-			ret.Count = count
-			c.JSON(500, &ret)
+		select {
+		case <-ticker.C:
+			for {
+				var task subnameBusterJob
+				err := list.Pop(&task)
+				if err == persistlist.ErrNil {
+					break
+				}
+				if err != nil {
+					fmt.Println("[scanRoute] POP ERROR:", err)
+					continue
+				}
+				//r, _ := jtrSimple(task.Name, task.Pot, task.Tid, time.Duration(task.To))
+				//s.doCallback(task.Cb, r)
+				fmt.Println("[scanRoute]task:", task.Tid)
+			}
+		case <-ctx.Done():
+			break __FOR_LOOP
 		}
-		//os.Remove(task.Name)
-
-		count++
 	}
-	ret.Message = "OK"
-	ret.Status = 0
-	ret.Count = count
-	c.JSON(200, &ret)
+	close(s.scanQuit)
 }
 
 func (s *Web) Run(port int, ctx context.Context) error {
@@ -314,11 +299,14 @@ func (s *Web) Run(port int, ctx context.Context) error {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 	r.GET("/version", s.version)
-	r.POST("/simple", s.simple)
-	r.GET("/queued", s.queued)
-	r.POST("/flush", s.flush)
+	//r.POST("/simple", s.simple)
+	//r.POST("/flush", s.flush)
 
-	//r.GET("/status", s.status)
+	r.GET("/status", s.getStatus)
+	r.PUT("/task/:tid", s.addNewTask)
+	r.GET("/task/:tid", s.getTask)
+	r.DELETE("/task/:tid", s.deleteTask)
+	r.POST("/flush", s.flush)
 
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
@@ -337,8 +325,8 @@ func NewWeb(dataDir, indexDir, cb string, to time.Duration) (*Web, error) {
 	}
 	web.list = list
 	web.tmpDir = dataDir
-	web.to = utime.Duration(to)
 	web.callback = cb
+	web.to = utime.Duration(to)
 	return &web, nil
 }
 
@@ -353,4 +341,161 @@ func (s *Web) doCallback(cb string, r string) {
 			http.Post(cb, "application/json", body)
 		}(r, cb)
 	}
+}
+
+func (s *Web) getStatus(c *gin.Context) {
+}
+
+func (s *Web) addNewTask(c *gin.Context) {
+	var err error
+	var exist bool
+
+	/*
+		to := s.to
+		timeout, ok := c.GetQuery("timeout")
+		if ok {
+			tto, err := time.ParseDuration(timeout)
+			if err == nil {
+				to = utime.Duration(tto)
+			}
+		}
+
+		upf, err := c.FormFile("filename")
+		if err != nil {
+			c.JSON(400,
+				CR{
+					Message: fmt.Sprintf("get form err: %s", err.Error()),
+					Status:  1,
+				})
+			return
+		}
+		src, err := upf.Open()
+		if err != nil {
+			c.JSON(400, CR{
+				Message: fmt.Sprintf("open form err:  %s", err.Error()),
+				Status:  1,
+			})
+			return
+		}
+		defer src.Close()
+		f, err := ioutil.TempFile(s.tmpDir, "shadow_")
+		if err != nil {
+			c.JSON(500, CR{
+				Message: fmt.Sprintf("open new tmp file err:  %s", err.Error()),
+				Status:  1,
+			})
+			return
+		}
+		io.Copy(f, src)
+		f.Close()
+	*/
+
+	tid := c.Param("tid")
+	job := subnameBusterJob{
+		//To:  to,
+		Tid: tid,
+	}
+	job.Cb, exist = c.GetQuery("callback")
+	if !exist {
+		job.Cb = s.callback
+		exist = true
+	}
+
+	{
+		var ret struct {
+			CR
+			Additional AdditionalProp1 `json:"additionalProp1"`
+		}
+		ret.Status = 0
+		ret.Message = "OK"
+
+		list := s.list
+		l, err := list.Push(job)
+		if err != nil {
+			ret.Message = err.Error()
+			ret.Status = 1
+			c.JSON(500, ret)
+			return
+		}
+		c.JSON(200, ret)
+	}
+}
+
+func (s *Web) getTask(c *gin.Context) {
+	txt, _ := ioutil.ReadFile("/ygobuster/VERSION")
+	c.Data(200, "", txt)
+}
+
+func (s *Web) deleteTask(c *gin.Context) {
+	tid := c.Param("tid")
+	var ret struct {
+		CR                         //common response
+		Additional AdditionalProp1 `json:"additionalProp1"`
+	}
+
+	list := s.list
+	l, err := list.Len()
+	if err != nil {
+		ret.Message = err.Error()
+		ret.Status = 1
+		c.JSON(400, ret)
+		return
+	}
+
+	for i := 0; i < l; i++ {
+		var task subnameBusterJob
+		err := list.Pop(&task)
+		if err == persistlist.ErrNil {
+			break //list is empty
+		} else if err != nil {
+			ret.Message = err.Error()
+			ret.Status = 1
+			c.JSON(500, ret)
+			return
+		}
+
+		//os.Remove(task.Name)
+		if task.Tid != tid {
+			_, err := list.Push(task)
+			if err != nil {
+				ret.Message = err.Error()
+				ret.Status = 1
+				c.JSON(500, ret)
+				return
+			}
+		} else {
+			break //task is find and poped
+		}
+	}
+	ret.Message = "OK"
+	ret.Status = 0
+	c.JSON(200, ret)
+	return
+}
+
+func (s *Web) flush(c *gin.Context) {
+	list := s.list
+	var count int
+	var ret struct {
+		CR                         //common response
+		Additional AdditionalProp1 `json:"additionalProp1"`
+	}
+
+	for {
+		var task subnameBusterJob
+		err := list.Pop(&task)
+		if err == persistlist.ErrNil {
+			break
+		} else if err != nil {
+			ret.Message = err.Error()
+			ret.Status = 1
+			c.JSON(500, ret)
+		}
+		//os.Remove(task.Name)
+
+		count++
+	}
+	ret.Message = "OK"
+	ret.Status = 0
+	c.JSON(200, ret)
 }

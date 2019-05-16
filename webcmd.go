@@ -16,8 +16,8 @@ type webCmd struct {
 	port     int
 	scanto   string
 	callback string
-	datadir  string //
-	indexdir string //持久化目录
+	datadir  string //数据目录
+	indexdir string //任务信息持久化目录
 }
 
 func (p *webCmd) Name() string {
@@ -36,8 +36,8 @@ func (p *webCmd) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&p.port, "p", 8080, "set port")
 	f.StringVar(&p.scanto, "timeout", "2h", "set scan dir timeout")
 	f.StringVar(&p.callback, "callback", "", "set callback addr")
-	f.StringVar(&p.datadir, "data", "/dev/shm", "set data dir")
-	f.StringVar(&p.indexdir, "index", "/dev/shm/.persist", "set index dir")
+	f.StringVar(&p.datadir, "data", "/tmp/ygobuster", "set data dir")
+	f.StringVar(&p.indexdir, "index", "/tmp/ygobuster/.persist", "set index dir")
 }
 
 func (p *webCmd) Execute(context.Context, *flag.FlagSet, ...interface{}) subcommands.ExitStatus {
